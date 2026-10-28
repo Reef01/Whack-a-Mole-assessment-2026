@@ -1,0 +1,275 @@
+import sys
+import random
+import os 
+
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QPushButton, QLabel, QLineEdit, QVBoxLayout, QGridLayout
+from PyQt6.QtCore import QTimer, Qt, QSize, QUrl
+from PyQt6.QtGui import QIcon
+from PyQt6.QtMultimedia import QSoundEffect
+
+class WhackAMole(QMainWindow): 
+
+    def __init__(self):
+        super().__init__()
+
+        self.setWindowTitle("Whack-a-Mole")
+        self.setFixedSize(550, 650)
+
+        # Variables used during the game
+        self.score = 0
+        self.game_duration = 0
+        self.time_passed = 0
+        self.mole_position = -1
+        self.game_running = False 
+
+        # Finds the folder the mole images are in 
+        sound_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sound effects")
+        image_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "images")
+        self.hole_icon = QIcon(os.path.join(image_folder, "hole.png"))
+        self.mole_icon = (QIcon(os.path.join(image_folder, "mole1.png")), QIcon(os.path.join(image_folder, "mole2.png")), QIcon(os.path.join(image_folder, "mole3.png")))
+
+        self.current_mole_icon = None
+
+        # Finds the folder the sound effects are in
+        sound_folder = os.path.join(  os.path.dirname(os.path.abspath(__file__)),"sound effects")
+
+        # Sound effect for hitting the mole
+        self.hit_sound = QSoundEffect()
+        self.hit_sound.setSource(
+            QUrl.fromLocalFile(
+                os.path.join(sound_folder, "hit.wav")
+            )
+        )
+        self.hit_sound.setVolume(0.6)
+
+
+        # Sound for missing the mole
+        self.miss_sound = QSoundEffect()
+        self.miss_sound.setSource(
+            QUrl.fromLocalFile(
+                os.path.join(sound_folder, "miss.wav")
+            )
+        )   
+        self.miss_sound.setVolume(0.6)
+
+
+        # Sound for finishing the game
+        self.gamewin_sound = QSoundEffect()
+        self.gamewin_sound.setSource (QUrl.fromLocalFile (os.path.join(sound_folder, "gamewin.wav")))
+        
+        self.gamewin_sound.setVolume(0.6) # Set volume to 60% 
+
+        # Timer runs every second
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_timer)
+
+        # Main window layout
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+
+        self.main_layout = QVBoxLayout()
+        central_widget.setLayout(self.main_layout)
+
+        self.title_label = QLabel("Whack-a-Mole!")
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.title_label.setStyleSheet(""" QLabel {font-size: 28px; font-weight: bold; } """)
+
+        self.main_layout.addWidget(self.title_label)
+
+        # Tells the player what to enter
+        self.instruction_label = QLabel("Enter how many seconds you would like to play for! (between 15 and 60 seconds please)" )
+
+        self.instruction_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.main_layout.addWidget(self.instruction_label)
+
+        # Box for entering the game time
+        self.duration_input = QLineEdit()
+        self.duration_input.setPlaceholderText("Enter duration")
+        self.duration_input.setFixedHeight(40)
+
+        self.main_layout.addWidget(self.duration_input)
+
+        # Start button
+        self.start_button = QPushButton("Start!")
+        self.start_button.setFixedHeight(45)
+        self.start_button.clicked.connect(self.start_game)
+
+        self.main_layout.addWidget(self.start_button)
+
+        # Displays messages to the player
+        self.message_label = QLabel("Press Start to begin")
+
+        self.message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.main_layout.addWidget(self.message_label)
+
+        # Makes the 4x4 game grid
+        self.grid_layout = QGridLayout()
+        self.grid_layout.setSpacing(5)
+
+        self.buttons = []
+
+        for row in range(4):
+            for column in range(4):
+
+                button = QPushButton("")
+                button.setFixedSize(120, 100)
+
+                button.setIcon(self.hole_icon)
+                button.setIconSize(QSize(105, 85))
+
+                button.setStyleSheet("""
+                    QPushButton {background-color: white;border: none;}
+
+                    QPushButton:hover {background-color: #eeeeee;} """)
+
+                # Gives each button its own number from 0 to 15
+                button_number = row * 4 + column
+
+                button.clicked.connect(lambda checked, number=button_number: self.button_clicked(number))
+
+                self.grid_layout.addWidget(
+                    button,
+                    row,
+                    column
+                )
+
+                self.buttons.append(button)
+
+        self.main_layout.addLayout(self.grid_layout)
+
+
+    # Checks the entered time and starts the game
+    def start_game(self):
+
+        duration_text = self.duration_input.text()
+
+        # Makes sure the player entered a whole number
+        if duration_text.isdigit() == False:
+            self.message_label.setText(
+                "Please enter a whole number"
+            )
+            return
+
+        duration = int(duration_text)
+
+        # Idiot proofing if the time's input is between 15 and 60 seconds
+        if duration < 15 or duration > 60:
+            self.message_label.setText("Please choose between 15 and 60 seconds")
+            return
+
+        self.game_duration = duration
+        self.time_passed = 0
+        self.score = 0
+        self.game_running = True
+
+        self.clear_grid()
+
+        self.message_label.setText("Game started!")
+
+        self.move_mole()
+
+        # Timer updates once every second
+        self.timer.start(1000)
+
+
+    # Checks if the player clicked the mole
+    def button_clicked(self, button_number):
+
+        if self.game_running == False:
+            return
+
+        # If the player clicked the mole
+        if button_number == self.mole_position:
+            self.hit_sound.play()
+
+            self.score += 1
+            self.move_mole()
+
+        # If the player clicked a hole instead of the mole
+        else:
+            self.miss_sound.play()
+
+
+    # Moves the mole to a different random square
+    def move_mole(self):
+
+        old_position = self.mole_position
+        possible_positions = [] 
+
+        for postion in range(16):
+            if postion != old_position:
+                possible_positions.append(postion)
+
+        new_position = random.choice(possible_positions)
+
+        #Changes the old mole back to a hole
+        if old_position != -1:
+            self.buttons[old_position].setIcon(self.hole_icon)
+
+        self.mole_position = new_position
+
+        #Picks a random mole icon to display
+        self.current_mole_icon = random.choice(self.mole_icon) 
+
+        # Shows the mole in the new hole 
+        self.buttons[self.mole_position].setIcon (self.current_mole_icon)
+
+    # Keeps track of how long the game has been running
+    def update_timer(self):
+        if not self.game_running:
+            return
+
+        self.time_passed += 1
+        time_remaining = max(0, self.game_duration - self.time_passed)
+
+        if time_remaining == 0:
+            self.end_game()
+        else:
+            self.message_label.setText(f"Time remaining: {time_remaining}s | Score: {self.score}")
+
+
+    # Stops the game and shows the final score
+    def end_game(self):
+
+        self.timer.stop()
+        self.game_running = False
+
+        self.gamewin_sound.play()
+
+        self.clear_grid()
+
+        self.message_label.setText("Game Over! Score: " + str(self.score) + " | Press Start to play again")
+ 
+        self.save_score()
+
+    # Removes anything displayed on the game buttons
+    def clear_grid(self):
+
+        for button in self.buttons:
+            button.setText("")
+            button.setIcon(self.hole_icon)
+            button.setIconSize(QSize(105, 85))
+
+        self.mole_position = -1
+        self.current_mole_icon = None
+
+
+    # Adds the score to score.txt
+    def save_score(self):
+
+        score_file = open("score.txt", "a")
+
+        score_file.write(str(self.score) + "\n")
+
+        score_file.close()
+
+
+app = QApplication(sys.argv)
+
+window = WhackAMole()
+window.show()
+
+app.exec()
